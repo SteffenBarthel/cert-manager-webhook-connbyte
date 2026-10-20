@@ -72,6 +72,11 @@ helm upgrade --install connbyte-webhook ./deploy/connbyte-webhook \
 `secretAccess.clusterWide=true` allows reading Secrets in all namespaces. Use
 it only if you need it.
 
+Anyone who may create an Issuer in a listed namespace can make the webhook
+read a Secret there. Keep `secretAccess.resourceNames` set to the token
+Secret. The webhook sends the token only to `https://api.connbyte.com`, or to
+an endpoint the operator listed in `allowedBaseUrls`.
+
 ### 2. Create the issuer
 
 ```yaml
@@ -124,7 +129,7 @@ spec:
 | `apiTokenSecretRef.name` | yes | | Name of the Secret with the API token. |
 | `apiTokenSecretRef.key` | no | `token` | Key in the Secret. |
 | `ttl` | no | `60` | TTL of the TXT record in seconds (60 to 86400). |
-| `baseUrl` | no | `https://api.connbyte.com` | API endpoint. Only change it for tests. |
+| `baseUrl` | no | `https://api.connbyte.com` | API endpoint. Rejected unless listed in the chart value `allowedBaseUrls`. Only for tests. |
 
 ### Chart values
 
@@ -134,8 +139,10 @@ spec:
 | `certManager.namespace` | `cert-manager` | Namespace of cert-manager. |
 | `certManager.serviceAccountName` | `cert-manager` | Service account of cert-manager. |
 | `secretAccess.namespaces` | `[]` (= `certManager.namespace`) | Namespaces in which the webhook may read Secrets. |
-| `secretAccess.resourceNames` | `[]` (all) | Limit Secret access to these names. |
+| `secretAccess.resourceNames` | `[]` (all) | Limit Secret access to these names. Recommended when you add namespaces. |
 | `secretAccess.clusterWide` | `false` | Allow reading Secrets in all namespaces. |
+| `allowedBaseUrls` | `[]` | API endpoints an Issuer may set as `baseUrl` (exact match). Empty: `baseUrl` is rejected. |
+| `resources` | 10m/32Mi requests, 100m/128Mi limits | Pod resources. |
 | `image.repository` | `ghcr.io/steffenbarthel/cert-manager-webhook-connbyte` | Container image. |
 | `image.tag` | chart `appVersion` | Image tag. |
 

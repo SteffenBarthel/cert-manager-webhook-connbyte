@@ -32,7 +32,10 @@ func TestRunsSuite(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	fixture := acmetest.NewFixture(newSolver(),
+	solver := newSolver()
+	solver.allowedBaseURLs = []string{baseURL}
+
+	fixture := acmetest.NewFixture(solver,
 		acmetest.SetResolvedZone(zone),
 		acmetest.SetAllowAmbientCredentials(false),
 		acmetest.SetManifestPath("testdata/connbyte"),

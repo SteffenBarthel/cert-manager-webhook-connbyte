@@ -15,10 +15,17 @@ secretAccess:
   # Namespaces in which the webhook may read Secrets. Empty means
   # `certManager.namespace` only (enough for ClusterIssuers).
   namespaces: []
-  # Optional: limit access to these Secret names.
+  # Optional, recommended: limit access to these Secret names (for example
+  # `connbyte-api-token`). Empty means every Secret in the namespaces above.
   resourceNames: []
   # Allow reading Secrets in all namespaces. Off by default.
   clusterWide: false
+
+# API endpoints an Issuer may choose with the solver option `baseUrl`. The
+# webhook sends the API token to this URL, so it is not free to choose.
+# Empty (default): `baseUrl` is rejected and the webhook always uses
+# https://api.connbyte.com. Entries must match exactly (trailing `/` ignored).
+allowedBaseUrls: []
 
 image:
   repository: ghcr.io/steffenbarthel/cert-manager-webhook-connbyte
@@ -51,13 +58,13 @@ securityContext:
     drop:
       - ALL
 
-resources: {}
-  # limits:
-  #   cpu: 100m
-  #   memory: 128Mi
-  # requests:
-  #   cpu: 50m
-  #   memory: 64Mi
+resources:
+  limits:
+    cpu: 100m
+    memory: 128Mi
+  requests:
+    cpu: 10m
+    memory: 32Mi
 
 nodeSelector: {}
 

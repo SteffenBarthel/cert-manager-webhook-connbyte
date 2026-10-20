@@ -38,6 +38,10 @@ spec:
           env:
             - name: GROUP_NAME
               value: {{ .Values.groupName | quote }}
+            {{- with .Values.allowedBaseUrls }}
+            - name: CONNBYTE_ALLOWED_BASE_URLS
+              value: {{ join "," . | quote }}
+            {{- end }}
           securityContext:
 {{ toYaml .Values.securityContext | indent 12 }}
           ports:
