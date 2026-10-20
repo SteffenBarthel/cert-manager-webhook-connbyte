@@ -1,0 +1,18 @@
+apiVersion: v2
+name: connbyte-webhook
+description: cert-manager ACME DNS01 webhook solver for ConnByte DNS (https://connbyte.com/)
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+home: https://connbyte.com/
+sources:
+  - https://github.com/SteffenBarthel/cert-manager-webhook-connbyte
+keywords:
+  - cert-manager
+  - acme
+  - dns01
+  - connbyte
+maintainers:
+  - name: ConnByte
+    email: team@connbyte.com
+    url: https://connbyte.com/

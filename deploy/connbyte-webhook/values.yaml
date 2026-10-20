@@ -1,0 +1,66 @@
+# API group of the webhook. Reference it as `groupName` in the Issuer's
+# webhook solver. Only change it if you run two copies of this webhook.
+groupName: acme.connbyte.com
+
+certManager:
+  # Namespace and service account of cert-manager. cert-manager needs
+  # permission to call this webhook.
+  namespace: cert-manager
+  serviceAccountName: cert-manager
+
+# The webhook reads the ConnByte API token from a Secret in the namespace of
+# the Issuer (or in cert-manager's cluster resource namespace for a
+# ClusterIssuer). Grant read access only where it is needed.
+secretAccess:
+  # Namespaces in which the webhook may read Secrets. Empty means
+  # `certManager.namespace` only (enough for ClusterIssuers).
+  namespaces: []
+  # Optional: limit access to these Secret names.
+  resourceNames: []
+  # Allow reading Secrets in all namespaces. Off by default.
+  clusterWide: false
+
+image:
+  repository: ghcr.io/steffenbarthel/cert-manager-webhook-connbyte
+  # Defaults to the chart appVersion.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+nameOverride: ""
+fullnameOverride: ""
+
+replicaCount: 1
+
+service:
+  type: ClusterIP
+  port: 443
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+resources: {}
+  # limits:
+  #   cpu: 100m
+  #   memory: 128Mi
+  # requests:
+  #   cpu: 50m
+  #   memory: 64Mi
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}

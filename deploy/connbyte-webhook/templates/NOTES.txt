@@ -1,0 +1,18 @@
+The ConnByte DNS01 webhook is installed.
+
+Use it in an Issuer or ClusterIssuer:
+
+  solvers:
+    - dns01:
+        webhook:
+          groupName: {{ .Values.groupName }}
+          solverName: connbyte
+          config:
+            apiTokenSecretRef:
+              name: connbyte-api-token
+              key: token
+
+The webhook can read Secrets in: {{ if .Values.secretAccess.clusterWide }}all namespaces{{ else }}{{ join ", " (.Values.secretAccess.namespaces | default (list .Values.certManager.namespace)) }}{{ end }}
+
+More: https://github.com/SteffenBarthel/cert-manager-webhook-connbyte
+ConnByte: https://connbyte.com/

@@ -1,0 +1,174 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "connbyte-webhook.fullname" . }}
+  namespace: {{ .Release.Namespace | quote }}
+  labels:
+    app: {{ include "connbyte-webhook.name" . }}
+    chart: {{ include "connbyte-webhook.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+---
+# Grant the webhook permission to read the ConfigMap containing the Kubernetes
+# apiserver's requestheader-ca-certificate.
+# This ConfigMap is automatically created by the Kubernetes apiserver.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "connbyte-webhook.fullname" . }}:webhook-authentication-reader
+  namespace: kube-system
+  labels:
+    app: {{ include "connbyte-webhook.name" . }}
+    chart: {{ include "connbyte-webhook.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: extension-apiserver-authentication-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: {{ include "connbyte-webhook.fullname" . }}
+    namespace: {{ .Release.Namespace }}
+---
+# apiserver gets the auth-delegator role to delegate auth decisions to
+# the core apiserver
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "connbyte-webhook.fullname" . }}:auth-delegator
+  labels:
+    app: {{ include "connbyte-webhook.name" . }}
+    chart: {{ include "connbyte-webhook.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:auth-delegator
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: {{ include "connbyte-webhook.fullname" . }}
+    namespace: {{ .Release.Namespace }}
+---
+# Grant cert-manager permission to validate using our apiserver
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "connbyte-webhook.fullname" . }}:domain-solver
+  labels:
+    app: {{ include "connbyte-webhook.name" . }}
+    chart: {{ include "connbyte-webhook.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+rules:
+  - apiGroups:
+      - {{ .Values.groupName }}
+    resources:
+      - '*'
+    verbs:
+      - 'create'
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "connbyte-webhook.fullname" . }}:domain-solver
+  labels:
+    app: {{ include "connbyte-webhook.name" . }}
+    chart: {{ include "connbyte-webhook.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "connbyte-webhook.fullname" . }}:domain-solver
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: {{ .Values.certManager.serviceAccountName }}
+    namespace: {{ .Values.certManager.namespace }}
+---
+# Let the webhook read the ConnByte API token Secrets referenced by Issuers.
+{{- $namespaces := .Values.secretAccess.namespaces | default (list .Values.certManager.namespace) }}
+{{- if .Values.secretAccess.clusterWide }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "connbyte-webhook.fullname" . }}:secret-reader
+  labels:
+    app: {{ include "connbyte-webhook.name" . }}
+    chart: {{ include "connbyte-webhook.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    {{- with .Values.secretAccess.resourceNames }}
+    resourceNames:
+{{ toYaml . | indent 6 }}
+    {{- end }}
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "connbyte-webhook.fullname" . }}:secret-reader
+  labels:
+    app: {{ include "connbyte-webhook.name" . }}
+    chart: {{ include "connbyte-webhook.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "connbyte-webhook.fullname" . }}:secret-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: {{ include "connbyte-webhook.fullname" . }}
+    namespace: {{ .Release.Namespace }}
+{{- else }}
+{{- range $ns := $namespaces }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "connbyte-webhook.fullname" $ }}:secret-reader
+  namespace: {{ $ns }}
+  labels:
+    app: {{ include "connbyte-webhook.name" $ }}
+    chart: {{ include "connbyte-webhook.chart" $ }}
+    release: {{ $.Release.Name }}
+    heritage: {{ $.Release.Service }}
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    {{- with $.Values.secretAccess.resourceNames }}
+    resourceNames:
+{{ toYaml . | indent 6 }}
+    {{- end }}
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "connbyte-webhook.fullname" $ }}:secret-reader
+  namespace: {{ $ns }}
+  labels:
+    app: {{ include "connbyte-webhook.name" $ }}
+    chart: {{ include "connbyte-webhook.chart" $ }}
+    release: {{ $.Release.Name }}
+    heritage: {{ $.Release.Service }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "connbyte-webhook.fullname" $ }}:secret-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: {{ include "connbyte-webhook.fullname" $ }}
+    namespace: {{ $.Release.Namespace }}
+{{- end }}
+{{- end }}

@@ -1,0 +1,6 @@
+{
+  "apiTokenSecretRef": {
+    "name": "connbyte-api-token",
+    "key": "token"
+  }
+}
