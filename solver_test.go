@@ -22,6 +22,7 @@ func newTestSolver(t *testing.T, zones ...string) (*connbyteSolver, *mock.Server
 	t.Cleanup(api.Close)
 	url := api.StartHTTP()
 	s := newSolver()
+	s.allowedBaseURLs = []string{url}
 	s.getSecret = func(_ context.Context, namespace, name, key string) (string, error) {
 		if namespace != "team-a" || name != "connbyte" || key != "token" {
 			return "", errors.New("secret not found")
@@ -129,7 +130,9 @@ func TestPresentErrors(t *testing.T) {
 		{"unknown zone", challenge(t, url, "_acme-challenge.example.org.", "k", nil), "no matching zone"},
 		{"suffix is not a parent zone", challenge(t, url, "_acme-challenge.notexample.com.", "k", nil), "no matching zone"},
 		{"ttl too low", challenge(t, url, "_acme-challenge.example.com.", "k", map[string]any{"ttl": 30}), "ttl must be between"},
-		{"bad base url", challenge(t, "file:///etc/passwd", "_acme-challenge.example.com.", "k", nil), "baseUrl"},
+		{"bad base url", challenge(t, "file:///etc/passwd", "_acme-challenge.example.com.", "k", nil), "baseUrl must be"},
+		{"base url not allowed", challenge(t, "https://attacker.example", "_acme-challenge.example.com.", "k", nil), "baseUrl is not allowed"},
+		{"base url with credentials", challenge(t, strings.Replace(url, "://", "://user:pass@", 1), "_acme-challenge.example.com.", "k", nil), "without credentials"},
 		{"missing secret", func() *v1alpha1.ChallengeRequest {
 			ch := challenge(t, url, "_acme-challenge.example.com.", "k", nil)
 			ch.ResourceNamespace = "team-b"
@@ -163,5 +166,50 @@ func TestLoadConfigDefaults(t *testing.T) {
 	}
 	if cfg.APITokenSecretRef.Key != "token" || cfg.TTL != 60 || cfg.BaseURL != "" {
 		t.Fatalf("unexpected defaults: %+v", cfg)
+	}
+}
+
+func TestBaseURLNotAllowedDoesNotReadSecret(t *testing.T) {
+	s, api, _ := newTestSolver(t, "example.com")
+	read := false
+	s.getSecret = func(context.Context, string, string, string) (string, error) {
+		read = true
+		return testToken, nil
+	}
+	err := s.Present(challenge(t, "https://attacker.example", "_acme-challenge.example.com.", "k", nil))
+	if err == nil || !strings.Contains(err.Error(), "not allowed") {
+		t.Fatalf("Present error = %v, want not allowed", err)
+	}
+	if read {
+		t.Fatal("secret was read for a rejected baseUrl")
+	}
+	if len(api.Calls()) != 0 {
+		t.Fatalf("API was called: %v", api.Calls())
+	}
+}
+
+func TestDefaultSolverRejectsBaseURL(t *testing.T) {
+	t.Setenv(allowedBaseURLsEnv, "")
+	s := newSolver()
+	if err := s.checkBaseURL("https://api.connbyte.com"); err == nil {
+		t.Fatal("baseUrl accepted without allowlist")
+	}
+	if err := s.checkBaseURL(""); err != nil {
+		t.Fatalf("empty baseUrl: %v", err)
+	}
+}
+
+func TestAllowlistFromEnv(t *testing.T) {
+	t.Setenv(allowedBaseURLsEnv, " https://api.connbyte.com/ , http://mock.test:8080,")
+	s := newSolver()
+	for _, ok := range []string{"https://api.connbyte.com", "https://api.connbyte.com/", "http://mock.test:8080"} {
+		if err := s.checkBaseURL(ok); err != nil {
+			t.Errorf("checkBaseURL(%q) = %v", ok, err)
+		}
+	}
+	for _, bad := range []string{"http://api.connbyte.com", "https://api.connbyte.com.attacker.example", "https://api.connbyte.com/v2", "https://api.connbyte.com?x=1"} {
+		if err := s.checkBaseURL(bad); err == nil {
+			t.Errorf("checkBaseURL(%q) accepted", bad)
+		}
 	}
 }
