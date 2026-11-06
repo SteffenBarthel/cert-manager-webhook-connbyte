@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -25,6 +27,10 @@ const (
 	defaultTTL      = 60
 	defaultTokenKey = "token"
 	requestTimeout  = 60 * time.Second
+
+	// allowedBaseURLsEnv lists the API endpoints (comma-separated) that an
+	// Issuer may select with baseUrl. Empty means baseUrl is rejected.
+	allowedBaseURLsEnv = "CONNBYTE_ALLOWED_BASE_URLS"
 )
 
 // secretGetter returns the value of a key in a Kubernetes Secret.
@@ -34,6 +40,9 @@ type secretGetter func(ctx context.Context, namespace, name, key string) (string
 type connbyteSolver struct {
 	getSecret  secretGetter
 	httpClient *http.Client
+	// allowedBaseURLs are the only values accepted for baseUrl. The API
+	// token is sent to baseUrl, so Issuer authors must not choose it freely.
+	allowedBaseURLs []string
 }
 
 var _ webhook.Solver = (*connbyteSolver)(nil)
@@ -49,11 +58,50 @@ type solverConfig struct {
 	TTL int `json:"ttl,omitempty"`
 
 	// BaseURL overrides the API endpoint. Default: https://api.connbyte.com.
+	// It must be listed in CONNBYTE_ALLOWED_BASE_URLS.
 	BaseURL string `json:"baseUrl,omitempty"`
 }
 
 func newSolver() *connbyteSolver {
-	return &connbyteSolver{httpClient: &http.Client{Timeout: 30 * time.Second}}
+	return &connbyteSolver{
+		httpClient:      &http.Client{Timeout: 30 * time.Second},
+		allowedBaseURLs: parseAllowedBaseURLs(os.Getenv(allowedBaseURLsEnv)),
+	}
+}
+
+func parseAllowedBaseURLs(v string) []string {
+	var out []string
+	for _, u := range strings.Split(v, ",") {
+		if u = normalizeBaseURL(u); u != "" {
+			out = append(out, u)
+		}
+	}
+	return out
+}
+
+func normalizeBaseURL(u string) string {
+	return strings.TrimRight(strings.TrimSpace(u), "/")
+}
+
+// checkBaseURL accepts an empty baseUrl (default endpoint) or one that is a
+// well-formed http(s) URL without credentials and exactly matches an entry
+// of the operator allowlist.
+func (s *connbyteSolver) checkBaseURL(raw string) error {
+	if raw == "" {
+		return nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" || u.User != nil ||
+		u.RawQuery != "" || u.Fragment != "" {
+		return errors.New("solver config: baseUrl must be an http(s) URL without credentials, query or fragment")
+	}
+	want := normalizeBaseURL(raw)
+	for _, a := range s.allowedBaseURLs {
+		if a == want {
+			return nil
+		}
+	}
+	return fmt.Errorf("solver config: baseUrl is not allowed; the webhook operator must list it in %s", allowedBaseURLsEnv)
 }
 
 func (s *connbyteSolver) Name() string {
@@ -143,6 +191,9 @@ func (s *connbyteSolver) setup(ctx context.Context, ch *v1alpha1.ChallengeReques
 	if err != nil {
 		return cfg, nil, err
 	}
+	if err := s.checkBaseURL(cfg.BaseURL); err != nil {
+		return cfg, nil, err
+	}
 	if s.getSecret == nil {
 		return cfg, nil, errors.New("solver is not initialized")
 	}
@@ -198,9 +249,6 @@ func loadConfig(cfgJSON *extapi.JSON) (solverConfig, error) {
 	}
 	if cfg.TTL < connbyte.MinTTL || cfg.TTL > connbyte.MaxTTL {
 		return cfg, fmt.Errorf("solver config: ttl must be between %d and %d", connbyte.MinTTL, connbyte.MaxTTL)
-	}
-	if cfg.BaseURL != "" && !strings.HasPrefix(cfg.BaseURL, "https://") && !strings.HasPrefix(cfg.BaseURL, "http://") {
-		return cfg, errors.New("solver config: baseUrl must be an http(s) URL")
 	}
 	return cfg, nil
 }
